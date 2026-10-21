@@ -1,0 +1,1280 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: a571c0d144b14fd4a87a9d9b2aa9fcd6
+      name: Templates/Applications
+  templates:
+    - uuid: aea39238aa7a4a07a536fe5c0778edb4
+      template: 'BitDefender Gravityzone by HTTP'
+      name: 'BitDefender Gravityzone by HTTP'
+      description: |
+        Bitdefender GravityZone monitoring template for Zabbix 7.0 LTS.
+        
+        This template uses the Bitdefender GravityZone Public API to monitor endpoint protection, security incidents, malware detections, vulnerabilities, patch management, risk information, and other security-related metrics.
+        
+        The template is designed to use the GravityZone JSON-RPC API through Zabbix HTTP agent items.
+        
+        API documentation:
+        https://www.bitdefender.com/business/support/en/77209-125277-public-api.html
+        https://www.bitdefender.com/business/support/en/77209-141188-api-usage-examples.html
+        
+        Author:
+        Luiz Fernando
+        https://github.com/luizcarmo1
+      groups:
+        - name: Templates/Applications
+      items:
+        - uuid: 85141da7f3c04f8980cdc710fa531c93
+          name: 'Bitdefender: Get endpoints data'
+          type: SCRIPT
+          key: bitdefender.endpoints.data
+          delay: 30m
+          history: 7d
+          value_type: TEXT
+          trends: '0'
+          params: |
+            var params = JSON.parse(value);
+            
+            var url = params.url;
+            var apiKey = params.api_key;
+            var perPage = parseInt(params.per_page, 10);
+            
+            var request = new HttpRequest();
+            
+            request.addHeader('Content-Type: application/json');
+            
+            var auth = apiKey + ':';
+            var encodedAuth = btoa(auth);
+            
+            request.addHeader('Authorization: Basic ' + encodedAuth);
+            
+            var allItems = [];
+            var page = 1;
+            var total = null;
+            var pagesCount = null;
+            
+            while (true) {
+                var body = JSON.stringify({
+                    jsonrpc: '2.0',
+                    method: 'getNetworkInventoryItems',
+                    params: {
+                        page: page,
+                        perPage: perPage,
+                        filters: {
+                            type: {
+                                computers: true
+                            },
+                            depth: {
+                                allItemsRecursively: true
+                            }
+                        },
+                        options: {
+                            endpoints: {
+                                returnProductOutdated: true,
+                                includeScanLogs: true
+                            }
+                        }
+                    },
+                    id: 'zabbix'
+                });
+            
+                var response = request.post(url, body);
+            
+                var status = request.getStatus();
+            
+                if (status != 200) {
+                    throw 'GravityZone API returned HTTP status ' + status;
+                }
+            
+                var data = JSON.parse(response);
+            
+                if (data.error) {
+                    throw 'GravityZone API error ' +
+                        data.error.code + ': ' +
+                        data.error.message +
+                        (data.error.data && data.error.data.details
+                            ? ' - ' + data.error.data.details
+                            : '');
+                }
+            
+                if (!data.result || !data.result.items) {
+                    throw 'Invalid GravityZone API response: result.items not found';
+                }
+            
+                if (total === null) {
+                    total = data.result.total;
+                    pagesCount = data.result.pagesCount;
+                }
+            
+                for (var i = 0; i < data.result.items.length; i++) {
+                    allItems.push(data.result.items[i]);
+                }
+            
+                if (!data.result.hasMoreRecords) {
+                    break;
+                }
+            
+                page++;
+            
+                if (page > pagesCount) {
+                    throw 'GravityZone pagination error: page exceeded pagesCount';
+                }
+            }
+            
+            return JSON.stringify({
+                id: 'zabbix',
+                jsonrpc: '2.0',
+                result: {
+                    page: 1,
+                    perPage: allItems.length,
+                    hasMoreRecords: false,
+                    total: total,
+                    pagesCount: 1,
+                    items: allItems
+                }
+            });
+          description: |
+            Tests connectivity and authentication against the Bitdefender GravityZone Public API.
+            
+            The item performs a lightweight getNetworkInventoryItems request with a single requested object.
+            
+            The returned JSON response is used to verify that:
+            - the GravityZone API is reachable;
+            - the configured API key is valid;
+            - the API endpoint is available;
+            - the Zabbix server can communicate with GravityZone.
+            
+            API method:
+            getNetworkInventoryItems
+          timeout: 120s
+          parameters:
+            - name: api_key
+              value: '{$BITDEFENDER.API.KEY}'
+            - name: per_page
+              value: '500'
+            - name: url
+              value: '{$BITDEFENDER.API.URL}/v1.1/jsonrpc/network'
+        - uuid: 75505906a14f458e9a1b1b0dc256e8c3
+          name: 'Bitdefender: Endpoints not protected'
+          type: DEPENDENT
+          key: bitdefender.endpoints.not_protected
+          delay: '0'
+          units: endpoints
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var items = data.result.items;
+                  
+                  var count = 0;
+                  
+                  for (var i = 0; i < items.length; i++) {
+                      var details = items[i].details || {};
+                  
+                      if (
+                          details.isManaged !== true ||
+                          details.managedWithBest !== true
+                      ) {
+                          count++;
+                      }
+                  }
+                  
+                  return count;
+          master_item:
+            key: bitdefender.endpoints.data
+          triggers:
+            - uuid: 03a67c11c240450b8e1791a7e319270e
+              expression: 'last(/BitDefender Gravityzone by HTTP/bitdefender.endpoints.not_protected)>last(/BitDefender Gravityzone by HTTP/bitdefender.endpoints.not_protected,#2)'
+              name: 'Bitdefender: Endpoints not protected increased'
+              opdata: 'Current: {?last(/BitDefender Gravityzone by HTTP/bitdefender.endpoints.not_protected)} | Previous: {?last(/BitDefender Gravityzone by HTTP/bitdefender.endpoints.not_protected,#2)}'
+              priority: WARNING
+        - uuid: f51578e24570463c94be8033c00ae93e
+          name: 'Bitdefender: Outdated endpoints'
+          type: DEPENDENT
+          key: bitdefender.endpoints.outdated
+          delay: '0'
+          units: endpoints
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var items = data.result.items || [];
+                  var count = 0;
+                  
+                  for (var i = 0; i < items.length; i++) {
+                      var details = items[i].details || {};
+                  
+                      if (
+                          details.managedWithBest === true &&
+                          details.productOutdated === false
+                      ) {
+                          count++;
+                      }
+                  }
+                  
+                  return count;
+          master_item:
+            key: bitdefender.endpoints.data
+          triggers:
+            - uuid: 248b667e51c0419588929473220278fb
+              expression: 'last(/BitDefender Gravityzone by HTTP/bitdefender.endpoints.outdated)>0'
+              name: 'Bitdefender: Outdated agents detected'
+              priority: WARNING
+        - uuid: 57b8fc3651e24088964efcb58b55a8dd
+          name: 'Bitdefender: Endpoints protected'
+          type: DEPENDENT
+          key: bitdefender.endpoints.protected
+          delay: '0'
+          units: endpoints
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var items = data.result.items;
+                  
+                  var count = 0;
+                  
+                  for (var i = 0; i < items.length; i++) {
+                      var details = items[i].details || {};
+                  
+                      if (
+                          details.isManaged === true &&
+                          details.managedWithBest === true
+                      ) {
+                          count++;
+                      }
+                  }
+                  
+                  return count;
+          master_item:
+            key: bitdefender.endpoints.data
+        - uuid: a924a6296ae74600b8e84bbeda55eeec
+          name: 'Bitdefender: Total endpoints'
+          type: DEPENDENT
+          key: bitdefender.endpoints.total
+          delay: '0'
+          units: endpoints
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  
+                  return data.result.items.length;
+          master_item:
+            key: bitdefender.endpoints.data
+        - uuid: bd3db6fc4f184ddda72e48cf63b4e9e0
+          name: 'Bitdefender: Up-to-date endpoints'
+          type: DEPENDENT
+          key: bitdefender.endpoints.up_to_date
+          delay: '0'
+          units: endpoints
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var items = data.result.items || [];
+                  var count = 0;
+                  
+                  for (var i = 0; i < items.length; i++) {
+                      var details = items[i].details || {};
+                  
+                      if (
+                          details.managedWithBest === true &&
+                          details.productOutdated === true
+                      ) {
+                          count++;
+                      }
+                  }
+                  
+                  return count;
+          master_item:
+            key: bitdefender.endpoints.data
+        - uuid: a076efb21c7341b4a4e535041a6100d0
+          name: 'Bitdefender: Get incidents data'
+          type: SCRIPT
+          key: bitdefender.incidents.data
+          delay: 5m
+          value_type: TEXT
+          trends: '0'
+          status: DISABLED
+          params: |
+            var params = JSON.parse(value);
+            
+            var request = new HttpRequest();
+            request.addHeader('Content-Type: application/json');
+            
+            var auth = btoa(params.api_key + ':');
+            request.addHeader('Authorization: Basic ' + auth);
+            
+            var allItems = [];
+            var page = 1;
+            var pagesCount = 1;
+            var total = 0;
+            
+            do {
+                var body = JSON.stringify({
+                    jsonrpc: '2.0',
+                    method: 'getIncidentsList',
+                    params: {
+                        page: page,
+                        perPage: 100
+                    },
+                    id: 'zabbix'
+                });
+            
+            	var response = request.post(params.url, body);
+            	var status = request.getStatus();
+            
+            	if (status != 200) {
+                	throw 'HTTP ' + status + ': ' + response;
+            	}
+            
+                var data = JSON.parse(response);
+            
+                if (data.error) {
+                    throw 'GravityZone Incidents API error: ' +
+                        JSON.stringify(data.error);
+                }
+            
+                if (!data.result || !data.result.items) {
+                    throw 'Invalid Incidents API response';
+                }
+            
+                if (page === 1) {
+                    pagesCount = data.result.pagesCount || 1;
+                    total = data.result.total || 0;
+                }
+            
+                for (var i = 0; i < data.result.items.length; i++) {
+                    allItems.push(data.result.items[i]);
+                }
+            
+                page++;
+            
+            } while (page <= pagesCount);
+            
+            return JSON.stringify({
+                result: {
+                    total: total,
+                    pagesCount: pagesCount,
+                    items: allItems
+                }
+            });
+          timeout: 120s
+          parameters:
+            - name: api_key
+              value: '{$BITDEFENDER.API.KEY}'
+            - name: url
+              value: '{$BITDEFENDER.API.URL}/v1.2/jsonrpc/incidents'
+        - uuid: 0c761c2407ce4c6fb7d59f3c1fea5939
+          name: 'Bitdefender: Get quarantine data'
+          type: SCRIPT
+          key: bitdefender.quarantine.data
+          delay: 5m
+          value_type: TEXT
+          trends: '0'
+          params: |
+            var params = JSON.parse(value);
+            
+            var request = new HttpRequest();
+            request.addHeader('Content-Type: application/json');
+            
+            var auth = btoa(params.api_key + ':');
+            request.addHeader('Authorization: Basic ' + auth);
+            
+            var allItems = [];
+            var page = 1;
+            var pagesCount = 1;
+            var total = 0;
+            
+            do {
+                var body = JSON.stringify({
+                    jsonrpc: '2.0',
+                    method: 'getQuarantineItemsList',
+                    params: {
+                        page: page,
+                        perPage: 100
+                    },
+                    id: 'zabbix'
+                });
+            
+                var response = request.post(params.url, body);
+                var status = request.getStatus();
+            
+                if (status != 200) {
+                    throw 'GravityZone Quarantine HTTP error: ' + status;
+                }
+            
+                var data = JSON.parse(response);
+            
+                if (data.error) {
+                    throw 'GravityZone Quarantine API error: ' +
+                        JSON.stringify(data.error);
+                }
+            
+                if (!data.result || !data.result.items) {
+                    throw 'Invalid Quarantine API response';
+                }
+            
+                if (page === 1) {
+                    pagesCount = data.result.pagesCount || 1;
+                    total = data.result.total || 0;
+                }
+            
+                for (var i = 0; i < data.result.items.length; i++) {
+                    allItems.push(data.result.items[i]);
+                }
+            
+                page++;
+            
+            } while (page <= pagesCount);
+            
+            return JSON.stringify({
+                result: {
+                    total: total,
+                    pagesCount: pagesCount,
+                    items: allItems
+                }
+            });
+          timeout: 120s
+          parameters:
+            - name: api_key
+              value: '{$BITDEFENDER.API.KEY}'
+            - name: url
+              value: '{$BITDEFENDER.API.URL}/v1.0/jsonrpc/quarantine/computers'
+        - uuid: a32c773721f74c629936a3b0e2717ae4
+          name: 'Bitdefender: Quarantine items details'
+          type: DEPENDENT
+          key: bitdefender.quarantine.details
+          delay: '0'
+          value_type: TEXT
+          trends: '0'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.result.items
+          master_item:
+            key: bitdefender.quarantine.data
+        - uuid: 22b3da49cba74264927edbda98749b7d
+          name: 'Bitdefender: Unique affected endpoints'
+          type: DEPENDENT
+          key: bitdefender.quarantine.endpoints
+          delay: '0'
+          units: endpoints
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var items = data.result.items || [];
+                  var endpoints = {};
+                  
+                  for (var i = 0; i < items.length; i++) {
+                      var name = items[i].endpointName;
+                  
+                      if (name) {
+                          endpoints[name.toLowerCase()] = true;
+                      }
+                  }
+                  
+                  return Object.keys(endpoints).length;
+          master_item:
+            key: bitdefender.quarantine.data
+        - uuid: 232ccc93ad16402ca582de0d4a8c3df2
+          name: 'Bitdefender: Latest quarantine item details'
+          type: DEPENDENT
+          key: bitdefender.quarantine.latest
+          delay: '0'
+          value_type: TEXT
+          trends: '0'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var items = data.result.items || [];
+                  
+                  if (items.length === 0) {
+                      return 'No quarantine items found';
+                  }
+                  
+                  items.sort(function(a, b) {
+                      return new Date(b.quarantinedOn) - new Date(a.quarantinedOn);
+                  });
+                  
+                  var item = items[0];
+                  
+                  return 'Endpoint: ' + (item.endpointName || 'Unknown') +
+                      ' | IP: ' + (item.endpointIP || 'Unknown') +
+                      ' | Threat: ' + (item.threatName || 'Unknown') +
+                      ' | Date: ' + (item.quarantinedOn || 'Unknown');
+          master_item:
+            key: bitdefender.quarantine.data
+        - uuid: 6fcef5aac7254e93a295d446827f1ec7
+          name: 'Bitdefender: New quarantine items (10m)'
+          type: DEPENDENT
+          key: bitdefender.quarantine.new_10m
+          delay: '0'
+          units: items
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var items = data.result.items || [];
+                  
+                  var now = Date.now();
+                  var windowMs = 10 * 60 * 1000;
+                  var count = 0;
+                  
+                  for (var i = 0; i < items.length; i++) {
+                      var date = Date.parse(items[i].quarantinedOn);
+                  
+                      if (!isNaN(date) && date >= now - windowMs && date <= now) {
+                          count++;
+                      }
+                  }
+                  
+                  return count;
+          master_item:
+            key: bitdefender.quarantine.data
+        - uuid: b408e01d4d5e4273bc7070effcfa68b7
+          name: 'Bitdefender: Removable items'
+          type: DEPENDENT
+          key: bitdefender.quarantine.removable
+          delay: '0'
+          units: items
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var items = data.result.items || [];
+                  var count = 0;
+                  
+                  for (var i = 0; i < items.length; i++) {
+                      if (items[i].canBeRemoved === true) {
+                          count++;
+                      }
+                  }
+                  
+                  return count;
+          master_item:
+            key: bitdefender.quarantine.data
+        - uuid: 3a8bc3261d0649c8b7a44e3e1578a338
+          name: 'Bitdefender: Restorable items'
+          type: DEPENDENT
+          key: bitdefender.quarantine.restorable
+          delay: '0'
+          units: items
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var items = data.result.items || [];
+                  var count = 0;
+                  
+                  for (var i = 0; i < items.length; i++) {
+                      if (items[i].canBeRestored === true) {
+                          count++;
+                      }
+                  }
+                  
+                  return count;
+          master_item:
+            key: bitdefender.quarantine.data
+        - uuid: 1320215efa6f4420b1b6392c4c4f8163
+          name: 'Bitdefender: Unique detected threats'
+          type: DEPENDENT
+          key: bitdefender.quarantine.threats
+          delay: '0'
+          units: threats
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var items = data.result.items || [];
+                  var threats = {};
+                  
+                  for (var i = 0; i < items.length; i++) {
+                      var name = items[i].threatName;
+                  
+                      if (name) {
+                          threats[name.toLowerCase()] = true;
+                      }
+                  }
+                  
+                  return Object.keys(threats).length;
+          master_item:
+            key: bitdefender.quarantine.data
+        - uuid: af10320a87304bc382e137d53315628d
+          name: 'Bitdefender: Total items in quarantine'
+          type: DEPENDENT
+          key: bitdefender.quarantine.total
+          delay: '0'
+          units: items
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  return data.result.total;
+          master_item:
+            key: bitdefender.quarantine.data
+          triggers:
+            - uuid: 665764e33fc7490f8f7e5db3594e2821
+              expression: 'last(/BitDefender Gravityzone by HTTP/bitdefender.quarantine.total)>last(/BitDefender Gravityzone by HTTP/bitdefender.quarantine.total,#2)'
+              name: 'Bitdefender: New item added to quarantine'
+              opdata: '{?last(/BitDefender Gravityzone by HTTP/bitdefender.quarantine.latest)}'
+              priority: WARNING
+      discovery_rules:
+        - uuid: 45df7257678142f9a1d521fa0d28ad12
+          name: 'Bitdefender: Endpoint discovery'
+          type: DEPENDENT
+          key: bitdefender.endpoint.discovery
+          delay: '0'
+          status: DISABLED
+          item_prototypes:
+            - uuid: c096e6071c224b0b84aebba5513e2ff7
+              name: 'Bitdefender: Endpoint [{#ENDPOINT.NAME}] - BEST status'
+              type: DEPENDENT
+              key: 'bitdefender.endpoint.best[{#ENDPOINT.ID}]'
+              delay: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.result.items[?(@.id==''{#ENDPOINT.ID}'')].details.managedWithBest.first()'
+                - type: BOOL_TO_DECIMAL
+                  parameters:
+                    - ''
+              master_item:
+                key: bitdefender.endpoints.data
+            - uuid: d8332e50518d420899b226b90556c90f
+              name: 'Bitdefender: Endpoint [{#ENDPOINT.NAME}] - Managed status'
+              type: DEPENDENT
+              key: 'bitdefender.endpoint.managed[{#ENDPOINT.ID}]'
+              delay: '0'
+              status: DISABLED
+              discover: NO_DISCOVER
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.result.items[?(@.id==''{#ENDPOINT.ID}'')].details.isManaged.first()'
+                - type: JAVASCRIPT
+                  parameters:
+                    - 'return value === ''true'' ? 1 : 0;'
+              master_item:
+                key: bitdefender.endpoints.data
+          master_item:
+            key: bitdefender.endpoints.data
+          lld_macro_paths:
+            - lld_macro: '{#ENDPOINT.BEST}'
+              path: $.details.managedWithBest
+            - lld_macro: '{#ENDPOINT.FQDN}'
+              path: $.details.fqdn
+            - lld_macro: '{#ENDPOINT.ID}'
+              path: $.id
+            - lld_macro: '{#ENDPOINT.IP}'
+              path: $.details.ip
+            - lld_macro: '{#ENDPOINT.NAME}'
+              path: $.name
+            - lld_macro: '{#ENDPOINT.OS}'
+              path: $.details.operatingSystemVersion
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.result.items
+      macros:
+        - macro: '{$BITDEFENDER.API.KEY}'
+          type: SECRET_TEXT
+          description: 'Bitdefender GravityZone API key used to authenticate requests to the GravityZone Public API.  Create an API key in GravityZone Control Center under: Configuration → API Keys  The API key must have the permissions required by the API methods used by this template.  This macro contains sensitive authentication data and should be configured as Secret text.'
+        - macro: '{$BITDEFENDER.API.URL}'
+          value: 'https://cloud.gravityzone.bitdefender.com/api'
+          description: 'Base URL of the Bitdefender GravityZone Public API. Default: https://cloud.gravityzone.bitdefender.com/api'
+        - macro: '{$BITDEFENDER.API.VERSION}'
+          value: v1.0
+          description: 'Bitdefender GravityZone Public API version used by the template.  This macro allows the API version to be changed without modifying individual HTTP agent items.'
+      dashboards:
+        - uuid: b98829a3b45649e88ccf49b92470b09a
+          name: 'Bitdefender GravityZone'
+          pages:
+            - name: Overview
+              widgets:
+                - type: item
+                  name: 'Total endpoints'
+                  width: '16'
+                  height: '3'
+                  hide_header: 'YES'
+                  fields:
+                    - type: INTEGER
+                      name: decimal_places
+                      value: '0'
+                    - type: INTEGER
+                      name: desc_size
+                      value: '12'
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        host: 'BitDefender Gravityzone by HTTP'
+                        key: bitdefender.endpoints.total
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '10'
+                    - type: INTEGER
+                      name: show.0
+                      value: '1'
+                    - type: INTEGER
+                      name: show.1
+                      value: '2'
+                    - type: INTEGER
+                      name: show.2
+                      value: '4'
+                    - type: INTEGER
+                      name: units_bold
+                      value: '0'
+                    - type: INTEGER
+                      name: units_show
+                      value: '0'
+                - type: item
+                  name: 'Total items in quarantine'
+                  'y': '3'
+                  width: '14'
+                  height: '3'
+                  hide_header: 'YES'
+                  fields:
+                    - type: INTEGER
+                      name: decimal_places
+                      value: '0'
+                    - type: INTEGER
+                      name: desc_size
+                      value: '10'
+                    - type: STRING
+                      name: down_color
+                      value: 00FF00
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        host: 'BitDefender Gravityzone by HTTP'
+                        key: bitdefender.quarantine.total
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '10'
+                    - type: INTEGER
+                      name: show.0
+                      value: '1'
+                    - type: INTEGER
+                      name: show.1
+                      value: '2'
+                    - type: INTEGER
+                      name: show.2
+                      value: '4'
+                    - type: STRING
+                      name: thresholds.0.color
+                      value: FF465C
+                    - type: STRING
+                      name: thresholds.0.threshold
+                      value: '1'
+                    - type: INTEGER
+                      name: units_bold
+                      value: '0'
+                    - type: INTEGER
+                      name: units_show
+                      value: '0'
+                    - type: STRING
+                      name: up_color
+                      value: FF0000
+                - type: item
+                  name: 'Restorable items'
+                  'y': '6'
+                  width: '14'
+                  height: '3'
+                  hide_header: 'YES'
+                  fields:
+                    - type: INTEGER
+                      name: decimal_places
+                      value: '0'
+                    - type: INTEGER
+                      name: desc_size
+                      value: '10'
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        host: 'BitDefender Gravityzone by HTTP'
+                        key: bitdefender.quarantine.restorable
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '10'
+                    - type: INTEGER
+                      name: show.0
+                      value: '1'
+                    - type: INTEGER
+                      name: show.1
+                      value: '2'
+                    - type: INTEGER
+                      name: show.2
+                      value: '4'
+                    - type: INTEGER
+                      name: units_bold
+                      value: '0'
+                    - type: INTEGER
+                      name: units_show
+                      value: '0'
+                - type: graph
+                  name: 'Total items in quarantine'
+                  'y': '9'
+                  width: '24'
+                  height: '6'
+                  fields:
+                    - type: GRAPH
+                      name: graphid.0
+                      value:
+                        host: 'BitDefender Gravityzone by HTTP'
+                        name: 'Total items in quarantine'
+                    - type: STRING
+                      name: reference
+                      value: ORTLT
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '10'
+                - type: item
+                  name: 'New quarantine items (10m)'
+                  x: '14'
+                  'y': '3'
+                  width: '13'
+                  height: '3'
+                  hide_header: 'YES'
+                  fields:
+                    - type: INTEGER
+                      name: decimal_places
+                      value: '0'
+                    - type: INTEGER
+                      name: desc_size
+                      value: '10'
+                    - type: STRING
+                      name: down_color
+                      value: 00FF00
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        host: 'BitDefender Gravityzone by HTTP'
+                        key: bitdefender.quarantine.new_10m
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '10'
+                    - type: INTEGER
+                      name: show.0
+                      value: '1'
+                    - type: INTEGER
+                      name: show.1
+                      value: '2'
+                    - type: INTEGER
+                      name: show.2
+                      value: '4'
+                    - type: INTEGER
+                      name: units_bold
+                      value: '0'
+                    - type: INTEGER
+                      name: units_show
+                      value: '0'
+                    - type: STRING
+                      name: up_color
+                      value: FF0000
+                - type: item
+                  name: 'Removable items'
+                  x: '14'
+                  'y': '6'
+                  width: '13'
+                  height: '3'
+                  hide_header: 'YES'
+                  fields:
+                    - type: INTEGER
+                      name: decimal_places
+                      value: '0'
+                    - type: INTEGER
+                      name: desc_size
+                      value: '10'
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        host: 'BitDefender Gravityzone by HTTP'
+                        key: bitdefender.quarantine.removable
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '10'
+                    - type: INTEGER
+                      name: show.0
+                      value: '1'
+                    - type: INTEGER
+                      name: show.1
+                      value: '2'
+                    - type: INTEGER
+                      name: show.2
+                      value: '4'
+                    - type: INTEGER
+                      name: units_bold
+                      value: '0'
+                    - type: INTEGER
+                      name: units_show
+                      value: '0'
+                - type: item
+                  name: 'Not protected'
+                  x: '16'
+                  width: '15'
+                  height: '3'
+                  hide_header: 'YES'
+                  fields:
+                    - type: INTEGER
+                      name: decimal_places
+                      value: '0'
+                    - type: INTEGER
+                      name: desc_size
+                      value: '12'
+                    - type: STRING
+                      name: down_color
+                      value: 00FF00
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        host: 'BitDefender Gravityzone by HTTP'
+                        key: bitdefender.endpoints.not_protected
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '10'
+                    - type: INTEGER
+                      name: show.0
+                      value: '1'
+                    - type: INTEGER
+                      name: show.1
+                      value: '2'
+                    - type: INTEGER
+                      name: show.2
+                      value: '4'
+                    - type: STRING
+                      name: thresholds.0.color
+                      value: FF465C
+                    - type: STRING
+                      name: thresholds.0.threshold
+                      value: '1'
+                    - type: INTEGER
+                      name: units_bold
+                      value: '0'
+                    - type: INTEGER
+                      name: units_show
+                      value: '0'
+                    - type: STRING
+                      name: up_color
+                      value: FF0000
+                - type: graph
+                  name: 'Outdated endpoints'
+                  x: '24'
+                  'y': '9'
+                  width: '24'
+                  height: '6'
+                  fields:
+                    - type: GRAPH
+                      name: graphid.0
+                      value:
+                        host: 'BitDefender Gravityzone by HTTP'
+                        name: 'Outdated endpoints'
+                    - type: STRING
+                      name: reference
+                      value: VROYF
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '10'
+                - type: item
+                  name: 'Unique affected endpoints'
+                  x: '27'
+                  'y': '3'
+                  width: '13'
+                  height: '3'
+                  hide_header: 'YES'
+                  fields:
+                    - type: INTEGER
+                      name: decimal_places
+                      value: '0'
+                    - type: INTEGER
+                      name: decimal_size
+                      value: '33'
+                    - type: INTEGER
+                      name: desc_size
+                      value: '10'
+                    - type: STRING
+                      name: down_color
+                      value: 00FF00
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        host: 'BitDefender Gravityzone by HTTP'
+                        key: bitdefender.quarantine.endpoints
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '10'
+                    - type: INTEGER
+                      name: show.0
+                      value: '1'
+                    - type: INTEGER
+                      name: show.1
+                      value: '2'
+                    - type: INTEGER
+                      name: show.2
+                      value: '4'
+                    - type: INTEGER
+                      name: units_bold
+                      value: '0'
+                    - type: INTEGER
+                      name: units_show
+                      value: '0'
+                    - type: STRING
+                      name: up_color
+                      value: FF0000
+                - type: item
+                  name: 'Unique detected threats'
+                  x: '27'
+                  'y': '6'
+                  width: '13'
+                  height: '3'
+                  hide_header: 'YES'
+                  fields:
+                    - type: INTEGER
+                      name: decimal_places
+                      value: '0'
+                    - type: INTEGER
+                      name: desc_size
+                      value: '10'
+                    - type: STRING
+                      name: down_color
+                      value: 00FF00
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        host: 'BitDefender Gravityzone by HTTP'
+                        key: bitdefender.quarantine.threats
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '10'
+                    - type: INTEGER
+                      name: show.0
+                      value: '1'
+                    - type: INTEGER
+                      name: show.1
+                      value: '2'
+                    - type: INTEGER
+                      name: show.2
+                      value: '4'
+                    - type: INTEGER
+                      name: units_bold
+                      value: '0'
+                    - type: INTEGER
+                      name: units_show
+                      value: '0'
+                    - type: STRING
+                      name: up_color
+                      value: FF0000
+                - type: item
+                  name: Protected
+                  x: '31'
+                  width: '15'
+                  height: '3'
+                  hide_header: 'YES'
+                  fields:
+                    - type: INTEGER
+                      name: decimal_places
+                      value: '0'
+                    - type: INTEGER
+                      name: desc_size
+                      value: '12'
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        host: 'BitDefender Gravityzone by HTTP'
+                        key: bitdefender.endpoints.protected
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '10'
+                    - type: INTEGER
+                      name: show.0
+                      value: '1'
+                    - type: INTEGER
+                      name: show.1
+                      value: '2'
+                    - type: INTEGER
+                      name: show.2
+                      value: '4'
+                    - type: INTEGER
+                      name: units_bold
+                      value: '0'
+                    - type: INTEGER
+                      name: units_show
+                      value: '0'
+                - type: problems
+                  name: 'Problemas do host Bitdefender'
+                  x: '40'
+                  'y': '3'
+                  width: '32'
+                  height: '6'
+                  fields:
+                    - type: STRING
+                      name: reference
+                      value: CLFRX
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '10'
+                    - type: INTEGER
+                      name: severities.0
+                      value: '0'
+                    - type: INTEGER
+                      name: severities.1
+                      value: '2'
+                    - type: INTEGER
+                      name: severities.2
+                      value: '3'
+                    - type: INTEGER
+                      name: severities.3
+                      value: '4'
+                    - type: INTEGER
+                      name: severities.4
+                      value: '5'
+                    - type: INTEGER
+                      name: show
+                      value: '3'
+                    - type: INTEGER
+                      name: show_lines
+                      value: '1000'
+                    - type: INTEGER
+                      name: show_symptoms
+                      value: '1'
+                - type: item
+                  name: 'Bitdefender: Outdated endpoints'
+                  x: '46'
+                  width: '13'
+                  height: '3'
+                  hide_header: 'YES'
+                  fields:
+                    - type: INTEGER
+                      name: decimal_places
+                      value: '0'
+                    - type: INTEGER
+                      name: desc_size
+                      value: '12'
+                    - type: STRING
+                      name: down_color
+                      value: 00FF00
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        host: 'BitDefender Gravityzone by HTTP'
+                        key: bitdefender.endpoints.outdated
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '10'
+                    - type: INTEGER
+                      name: show.0
+                      value: '1'
+                    - type: INTEGER
+                      name: show.1
+                      value: '2'
+                    - type: INTEGER
+                      name: show.2
+                      value: '4'
+                    - type: STRING
+                      name: thresholds.0.color
+                      value: FF465C
+                    - type: STRING
+                      name: thresholds.0.threshold
+                      value: '1'
+                    - type: INTEGER
+                      name: units_bold
+                      value: '0'
+                    - type: INTEGER
+                      name: units_show
+                      value: '0'
+                    - type: STRING
+                      name: up_color
+                      value: FF0000
+                - type: graph
+                  name: 'Endpoints not protected'
+                  x: '48'
+                  'y': '9'
+                  width: '24'
+                  height: '6'
+                  fields:
+                    - type: GRAPH
+                      name: graphid.0
+                      value:
+                        host: 'BitDefender Gravityzone by HTTP'
+                        name: 'Endpoints not protected'
+                    - type: STRING
+                      name: reference
+                      value: NDFFE
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '10'
+                - type: item
+                  name: 'Bitdefender: Up-to-date endpoints'
+                  x: '59'
+                  width: '13'
+                  height: '3'
+                  hide_header: 'YES'
+                  fields:
+                    - type: INTEGER
+                      name: decimal_places
+                      value: '0'
+                    - type: INTEGER
+                      name: desc_size
+                      value: '12'
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        host: 'BitDefender Gravityzone by HTTP'
+                        key: bitdefender.endpoints.up_to_date
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '10'
+                    - type: INTEGER
+                      name: show.0
+                      value: '1'
+                    - type: INTEGER
+                      name: show.1
+                      value: '2'
+                    - type: INTEGER
+                      name: show.2
+                      value: '4'
+                    - type: INTEGER
+                      name: units_bold
+                      value: '0'
+                    - type: INTEGER
+                      name: units_show
+                      value: '0'
+  graphs:
+    - uuid: b24f0b650a6d471581db4c3044b51b2a
+      name: 'Endpoints not protected'
+      graph_items:
+        - color: E57373
+          calc_fnc: ALL
+          item:
+            host: 'BitDefender Gravityzone by HTTP'
+            key: bitdefender.endpoints.not_protected
+    - uuid: 746440d84a3f4bc6a9f0cd34a7654c57
+      name: 'Outdated endpoints'
+      graph_items:
+        - color: F44336
+          calc_fnc: ALL
+          item:
+            host: 'BitDefender Gravityzone by HTTP'
+            key: bitdefender.endpoints.outdated
+    - uuid: b385677cc0ca4dfeab32f2fa7dd61c8b
+      name: 'Total items in quarantine'
+      graph_items:
+        - color: FF0000
+          calc_fnc: ALL
+          item:
+            host: 'BitDefender Gravityzone by HTTP'
+            key: bitdefender.quarantine.total
