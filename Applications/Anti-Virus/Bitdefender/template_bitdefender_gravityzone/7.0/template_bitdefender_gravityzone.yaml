@@ -160,6 +160,7 @@ zabbix_export:
           key: bitdefender.endpoints.not_protected
           delay: '0'
           units: endpoints
+          description: 'Number of endpoints that are not properly protected by Bitdefender BEST. An endpoint is considered not protected if it is not managed or does not have BEST installed and managed. This metric is based on the GravityZone network inventory.'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -185,16 +186,49 @@ zabbix_export:
             key: bitdefender.endpoints.data
           triggers:
             - uuid: 03a67c11c240450b8e1791a7e319270e
-              expression: 'last(/BitDefender Gravityzone by HTTP/bitdefender.endpoints.not_protected)>last(/BitDefender Gravityzone by HTTP/bitdefender.endpoints.not_protected,#2)'
-              name: 'Bitdefender: Endpoints not protected increased'
-              opdata: 'Current: {?last(/BitDefender Gravityzone by HTTP/bitdefender.endpoints.not_protected)} | Previous: {?last(/BitDefender Gravityzone by HTTP/bitdefender.endpoints.not_protected,#2)}'
+              expression: 'last(/BitDefender Gravityzone by HTTP/bitdefender.endpoints.not_protected)>0'
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: 'last(/BitDefender Gravityzone by HTTP/bitdefender.endpoints.not_protected)=0'
+              name: 'Bitdefender: Endpoints not protected detected'
               priority: WARNING
+              description: 'This trigger activates when the number of endpoints that do not meet the configured Bitdefender BEST protection criteria is greater than zero. The problem remains active until the not-protected endpoint count reaches zero. Operational data provides the current list of affected endpoint names.'
+        - uuid: 0a8131204f6646a3b6a665df8853a13f
+          name: 'Bitdefender: Not protected endpoint names'
+          type: DEPENDENT
+          key: bitdefender.endpoints.not_protected.names
+          delay: '0'
+          value_type: TEXT
+          trends: '0'
+          description: 'Comma-separated list of endpoint names that are not properly protected by Bitdefender BEST. The list is generated from the GravityZone network inventory and includes endpoints that are not managed or do not have BEST installed and managed.'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var items = data.result.items || [];
+                  var names = [];
+                  
+                  for (var i = 0; i < items.length; i++) {
+                      var details = items[i].details || {};
+                  
+                      if (
+                          details.isManaged !== true ||
+                          details.managedWithBest !== true
+                      ) {
+                          names.push(items[i].name || items[i].machineName || items[i].id || "Unknown");
+                      }
+                  }
+                  
+                  return names.length ? names.join(", ") : "None";
+          master_item:
+            key: bitdefender.endpoints.data
         - uuid: f51578e24570463c94be8033c00ae93e
           name: 'Bitdefender: Outdated endpoints'
           type: DEPENDENT
           key: bitdefender.endpoints.outdated
           delay: '0'
           units: endpoints
+          description: 'Number of managed endpoints with Bitdefender BEST reporting an outdated product version. Based on the productOutdated field returned by the GravityZone network inventory API.'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -208,7 +242,7 @@ zabbix_export:
                   
                       if (
                           details.managedWithBest === true &&
-                          details.productOutdated === false
+                          details.productOutdated === true
                       ) {
                           count++;
                       }
@@ -220,14 +254,55 @@ zabbix_export:
           triggers:
             - uuid: 248b667e51c0419588929473220278fb
               expression: 'last(/BitDefender Gravityzone by HTTP/bitdefender.endpoints.outdated)>0'
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: 'last(/BitDefender Gravityzone by HTTP/bitdefender.endpoints.outdated)=0'
               name: 'Bitdefender: Outdated agents detected'
               priority: WARNING
+              description: 'This trigger activates when one or more managed endpoints report an outdated Bitdefender BEST product version. The problem remains active until the outdated endpoint count reaches zero. Operational data provides the current list of affected endpoint names.'
+        - uuid: 9a65efe75f794d169a0191cb34a9bb88
+          name: 'Bitdefender: Outdated endpoint names'
+          type: DEPENDENT
+          key: bitdefender.endpoints.outdated.names
+          delay: '0'
+          value_type: TEXT
+          trends: '0'
+          description: 'Comma-separated list of managed endpoints whose Bitdefender BEST product version is reported as outdated by GravityZone. Based on the productOutdated field returned by the network inventory API.'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var items = data.result.items || [];
+                  var names = [];
+                  
+                  for (var i = 0; i < items.length; i++) {
+                      var details = items[i].details || {};
+                  
+                      if (
+                          details.managedWithBest === true &&
+                          details.productOutdated === true
+                      ) {
+                          names.push(
+                              items[i].name ||
+                              items[i].machineName ||
+                              items[i].id ||
+                              "Unknown"
+                          );
+                      }
+                  }
+                  
+                  return names.length > 0
+                      ? names.join(", ")
+                      : "Nenhum endpoint desatualizado";
+          master_item:
+            key: bitdefender.endpoints.data
         - uuid: 57b8fc3651e24088964efcb58b55a8dd
           name: 'Bitdefender: Endpoints protected'
           type: DEPENDENT
           key: bitdefender.endpoints.protected
           delay: '0'
           units: endpoints
+          description: 'Number of endpoints that are managed by GravityZone and have Bitdefender BEST installed and managed. This metric represents the endpoints meeting the template''s protection criteria.'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -257,6 +332,7 @@ zabbix_export:
           key: bitdefender.endpoints.total
           delay: '0'
           units: endpoints
+          description: 'Total number of endpoints returned by the GravityZone network inventory API, including managed and unmanaged endpoints.'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -272,6 +348,7 @@ zabbix_export:
           key: bitdefender.endpoints.up_to_date
           delay: '0'
           units: endpoints
+          description: 'Number of managed endpoints whose Bitdefender BEST product version is reported as up to date by GravityZone. Based on the productOutdated field returned by the network inventory API.'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -285,7 +362,7 @@ zabbix_export:
                   
                       if (
                           details.managedWithBest === true &&
-                          details.productOutdated === true
+                          details.productOutdated === false
                       ) {
                           count++;
                       }
@@ -294,83 +371,6 @@ zabbix_export:
                   return count;
           master_item:
             key: bitdefender.endpoints.data
-        - uuid: a076efb21c7341b4a4e535041a6100d0
-          name: 'Bitdefender: Get incidents data'
-          type: SCRIPT
-          key: bitdefender.incidents.data
-          delay: 5m
-          value_type: TEXT
-          trends: '0'
-          status: DISABLED
-          params: |
-            var params = JSON.parse(value);
-            
-            var request = new HttpRequest();
-            request.addHeader('Content-Type: application/json');
-            
-            var auth = btoa(params.api_key + ':');
-            request.addHeader('Authorization: Basic ' + auth);
-            
-            var allItems = [];
-            var page = 1;
-            var pagesCount = 1;
-            var total = 0;
-            
-            do {
-                var body = JSON.stringify({
-                    jsonrpc: '2.0',
-                    method: 'getIncidentsList',
-                    params: {
-                        page: page,
-                        perPage: 100
-                    },
-                    id: 'zabbix'
-                });
-            
-            	var response = request.post(params.url, body);
-            	var status = request.getStatus();
-            
-            	if (status != 200) {
-                	throw 'HTTP ' + status + ': ' + response;
-            	}
-            
-                var data = JSON.parse(response);
-            
-                if (data.error) {
-                    throw 'GravityZone Incidents API error: ' +
-                        JSON.stringify(data.error);
-                }
-            
-                if (!data.result || !data.result.items) {
-                    throw 'Invalid Incidents API response';
-                }
-            
-                if (page === 1) {
-                    pagesCount = data.result.pagesCount || 1;
-                    total = data.result.total || 0;
-                }
-            
-                for (var i = 0; i < data.result.items.length; i++) {
-                    allItems.push(data.result.items[i]);
-                }
-            
-                page++;
-            
-            } while (page <= pagesCount);
-            
-            return JSON.stringify({
-                result: {
-                    total: total,
-                    pagesCount: pagesCount,
-                    items: allItems
-                }
-            });
-          timeout: 120s
-          parameters:
-            - name: api_key
-              value: '{$BITDEFENDER.API.KEY}'
-            - name: url
-              value: '{$BITDEFENDER.API.URL}/v1.2/jsonrpc/incidents'
         - uuid: 0c761c2407ce4c6fb7d59f3c1fea5939
           name: 'Bitdefender: Get quarantine data'
           type: SCRIPT
@@ -441,6 +441,7 @@ zabbix_export:
                     items: allItems
                 }
             });
+          description: 'Retrieves quarantined items from the Bitdefender GravityZone Quarantine API. The script handles API authentication and pagination and returns the collected quarantine records as JSON for dependent items.'
           timeout: 120s
           parameters:
             - name: api_key
@@ -454,6 +455,7 @@ zabbix_export:
           delay: '0'
           value_type: TEXT
           trends: '0'
+          description: 'Extracts the quarantine item records from the master quarantine data item. The resulting JSON contains the available details for each quarantined item.'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -466,6 +468,7 @@ zabbix_export:
           key: bitdefender.quarantine.endpoints
           delay: '0'
           units: endpoints
+          description: 'Number of distinct endpoint names associated with items currently listed in the GravityZone quarantine inventory.'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -492,6 +495,7 @@ zabbix_export:
           delay: '0'
           value_type: TEXT
           trends: '0'
+          description: 'Returns a text summary of the most recently quarantined item, including endpoint name, endpoint IP address, detected threat name, and quarantine date.'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -521,6 +525,7 @@ zabbix_export:
           key: bitdefender.quarantine.new_10m
           delay: '0'
           units: items
+          description: 'Counts quarantine items whose quarantine timestamp falls within the configured 10-minute time window. This metric is intended to help identify recent quarantine activity.'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -549,6 +554,7 @@ zabbix_export:
           key: bitdefender.quarantine.removable
           delay: '0'
           units: items
+          description: 'Number of quarantined items that GravityZone reports as eligible for removal, based on the canBeRemoved field.'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -572,6 +578,7 @@ zabbix_export:
           key: bitdefender.quarantine.restorable
           delay: '0'
           units: items
+          description: 'Number of quarantined items that GravityZone reports as eligible for restoration, based on the canBeRestored field.'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -595,6 +602,7 @@ zabbix_export:
           key: bitdefender.quarantine.threats
           delay: '0'
           units: threats
+          description: 'Number of distinct threat names among the items currently listed in the GravityZone quarantine inventory.'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -620,6 +628,7 @@ zabbix_export:
           key: bitdefender.quarantine.total
           delay: '0'
           units: items
+          description: 'Total number of quarantine items returned by the GravityZone Quarantine API.'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -630,67 +639,12 @@ zabbix_export:
             key: bitdefender.quarantine.data
           triggers:
             - uuid: 665764e33fc7490f8f7e5db3594e2821
-              expression: 'last(/BitDefender Gravityzone by HTTP/bitdefender.quarantine.total)>last(/BitDefender Gravityzone by HTTP/bitdefender.quarantine.total,#2)'
-              name: 'Bitdefender: New item added to quarantine'
-              opdata: '{?last(/BitDefender Gravityzone by HTTP/bitdefender.quarantine.latest)}'
+              expression: 'last(/BitDefender Gravityzone by HTTP/bitdefender.quarantine.total)>1'
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: 'last(/BitDefender Gravityzone by HTTP/bitdefender.quarantine.total)=0'
+              name: 'Bitdefender: Quarantine items detected'
               priority: WARNING
-      discovery_rules:
-        - uuid: 45df7257678142f9a1d521fa0d28ad12
-          name: 'Bitdefender: Endpoint discovery'
-          type: DEPENDENT
-          key: bitdefender.endpoint.discovery
-          delay: '0'
-          status: DISABLED
-          item_prototypes:
-            - uuid: c096e6071c224b0b84aebba5513e2ff7
-              name: 'Bitdefender: Endpoint [{#ENDPOINT.NAME}] - BEST status'
-              type: DEPENDENT
-              key: 'bitdefender.endpoint.best[{#ENDPOINT.ID}]'
-              delay: '0'
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$.result.items[?(@.id==''{#ENDPOINT.ID}'')].details.managedWithBest.first()'
-                - type: BOOL_TO_DECIMAL
-                  parameters:
-                    - ''
-              master_item:
-                key: bitdefender.endpoints.data
-            - uuid: d8332e50518d420899b226b90556c90f
-              name: 'Bitdefender: Endpoint [{#ENDPOINT.NAME}] - Managed status'
-              type: DEPENDENT
-              key: 'bitdefender.endpoint.managed[{#ENDPOINT.ID}]'
-              delay: '0'
-              status: DISABLED
-              discover: NO_DISCOVER
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$.result.items[?(@.id==''{#ENDPOINT.ID}'')].details.isManaged.first()'
-                - type: JAVASCRIPT
-                  parameters:
-                    - 'return value === ''true'' ? 1 : 0;'
-              master_item:
-                key: bitdefender.endpoints.data
-          master_item:
-            key: bitdefender.endpoints.data
-          lld_macro_paths:
-            - lld_macro: '{#ENDPOINT.BEST}'
-              path: $.details.managedWithBest
-            - lld_macro: '{#ENDPOINT.FQDN}'
-              path: $.details.fqdn
-            - lld_macro: '{#ENDPOINT.ID}'
-              path: $.id
-            - lld_macro: '{#ENDPOINT.IP}'
-              path: $.details.ip
-            - lld_macro: '{#ENDPOINT.NAME}'
-              path: $.name
-            - lld_macro: '{#ENDPOINT.OS}'
-              path: $.details.operatingSystemVersion
-          preprocessing:
-            - type: JSONPATH
-              parameters:
-                - $.result.items
+              description: 'This trigger detects an increase in the total number of items listed in the Bitdefender GravityZone quarantine inventory. The event indicates that new quarantine activity may have occurred. The operational data provides details about the latest quarantined item.'
       macros:
         - macro: '{$BITDEFENDER.API.KEY}'
           type: SECRET_TEXT
@@ -1115,7 +1069,7 @@ zabbix_export:
                       name: units_show
                       value: '0'
                 - type: problems
-                  name: 'Problemas do host Bitdefender'
+                  name: 'Endpoint Security Alerts'
                   x: '40'
                   'y': '3'
                   width: '32'
@@ -1148,6 +1102,9 @@ zabbix_export:
                     - type: INTEGER
                       name: show_lines
                       value: '1000'
+                    - type: INTEGER
+                      name: show_opdata
+                      value: '2'
                     - type: INTEGER
                       name: show_symptoms
                       value: '1'
@@ -1253,6 +1210,86 @@ zabbix_export:
                     - type: INTEGER
                       name: units_show
                       value: '0'
+            - name: 'Endpoint Compliance'
+              display_period: '10'
+              widgets:
+                - type: itemhistory
+                  name: 'Not protected endpoint names'
+                  width: '56'
+                  height: '8'
+                  fields:
+                    - type: ITEM
+                      name: columns.0.itemid
+                      value:
+                        host: 'BitDefender Gravityzone by HTTP'
+                        key: bitdefender.endpoints.not_protected.names
+                    - type: INTEGER
+                      name: columns.0.monospace_font
+                      value: '1'
+                    - type: STRING
+                      name: columns.0.name
+                      value: 'Bitdefender: Not protected endpoint names'
+                    - type: STRING
+                      name: reference
+                      value: LBDUY
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '10'
+                    - type: INTEGER
+                      name: show_lines
+                      value: '1'
+                - type: itemhistory
+                  name: 'Quarantine items details'
+                  'y': '8'
+                  width: '56'
+                  height: '8'
+                  fields:
+                    - type: ITEM
+                      name: columns.0.itemid
+                      value:
+                        host: 'BitDefender Gravityzone by HTTP'
+                        key: bitdefender.quarantine.details
+                    - type: INTEGER
+                      name: columns.0.monospace_font
+                      value: '1'
+                    - type: STRING
+                      name: columns.0.name
+                      value: 'Bitdefender: Quarantine items details'
+                    - type: STRING
+                      name: reference
+                      value: WIXDS
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '10'
+                    - type: INTEGER
+                      name: show_lines
+                      value: '1'
+                - type: itemhistory
+                  name: 'Outdated endpoint names'
+                  x: '56'
+                  width: '16'
+                  height: '16'
+                  fields:
+                    - type: ITEM
+                      name: columns.0.itemid
+                      value:
+                        host: 'BitDefender Gravityzone by HTTP'
+                        key: bitdefender.endpoints.outdated.names
+                    - type: INTEGER
+                      name: columns.0.monospace_font
+                      value: '1'
+                    - type: STRING
+                      name: columns.0.name
+                      value: 'Bitdefender: Outdated endpoint names'
+                    - type: STRING
+                      name: reference
+                      value: RERXV
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '10'
+                    - type: INTEGER
+                      name: show_lines
+                      value: '1'
   graphs:
     - uuid: b24f0b650a6d471581db4c3044b51b2a
       name: 'Endpoints not protected'
