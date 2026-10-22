@@ -1,0 +1,96 @@
+
+name: Bug Report
+description: Report a bug or unexpected behavior in the Zabbix template.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug. Please provide enough information to reproduce the issue.
+        **Never include API keys, credentials, or sensitive production data.**
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I searched existing issues for similar reports.
+          required: true
+        - label: I removed credentials and sensitive information from this report.
+          required: true
+
+  - type: input
+    id: zabbix_version
+    attributes:
+      label: Zabbix version
+      description: Which Zabbix server or proxy version are you using?
+      placeholder: "7.0.x"
+    validations:
+      required: true
+
+  - type: input
+    id: template_version
+    attributes:
+      label: Template version
+      description: Specify the template release or commit.
+      placeholder: "v1.0.0 or main branch"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: affected_feature
+    attributes:
+      label: Affected feature
+      options:
+        - Endpoint inventory
+        - Endpoint protection status
+        - Outdated agents
+        - Quarantine monitoring
+        - API connectivity or authentication
+        - Item preprocessing
+        - Triggers and alerts
+        - Dashboard
+        - Template import
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug description
+      description: Clearly describe the problem.
+      placeholder: What happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: List the steps needed to reproduce the issue.
+      placeholder: |
+        1. Configure the template...
+        2. Wait for data collection...
+        3. Observe the error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant error messages
+      description: Include sanitized Zabbix errors or API responses, if applicable.
+      render: text
+    validations:
+      required: false

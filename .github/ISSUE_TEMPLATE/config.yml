@@ -1,0 +1,6 @@
+
+blank_issues_enabled: false
+contact_links:
+  - name: Security Vulnerability
+    url: https://github.com/luizcarmo1/bitdefender-gravityzone-zabbix-template/security/advisories/new
+    about: Report security vulnerabilities privately. Do not open public issues for security problems.
