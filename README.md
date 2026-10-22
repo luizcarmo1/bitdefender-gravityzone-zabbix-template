@@ -31,7 +31,7 @@ The template includes a Zabbix dashboard for monitoring Bitdefender GravityZone 
 
 ### Quarantine Monitoring
 
-![Bitdefender GravityZone Dashboard - Quarantine Monitoring](Applications/Anti-Virus/Bitdefender/template_bitdefender_gravityzone/7.0/images/dashboard-quarantine.png)
+![Bitdefender GravityZone Dashboard - Quarantine Monitoring](Applications/Anti-Virus/Bitdefender/template_bitdefender_gravityzone/7.0/images/dashboard-compliance.png)
 
 ## Compatibility
 

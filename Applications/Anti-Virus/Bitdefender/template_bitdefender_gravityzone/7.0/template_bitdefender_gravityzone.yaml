@@ -534,16 +534,32 @@ zabbix_export:
               parameters:
                 - |
                   var data = JSON.parse(value);
-                  var items = data.result.items || [];
+                  var items = data.result && data.result.items
+                      ? data.result.items
+                      : [];
                   
                   var now = Date.now();
                   var windowMs = 10 * 60 * 1000;
                   var count = 0;
                   
                   for (var i = 0; i < items.length; i++) {
-                      var date = Date.parse(items[i].quarantinedOn);
+                      var text = items[i].quarantinedOn;
                   
-                      if (!isNaN(date) && date >= now - windowMs && date <= now) {
+                      if (!text) {
+                          continue;
+                      }
+                  
+                      // GravityZone retorna a data sem informar o fuso horário.
+                      // Interpretar explicitamente como horário de Brasília (UTC-03:00).
+                      if (!/(Z|[+-]\d{2}:\d{2})$/i.test(text)) {
+                          text += "-03:00";
+                      }
+                  
+                      var timestamp = Date.parse(text);
+                  
+                      if (!isNaN(timestamp) &&
+                          timestamp >= now - windowMs &&
+                          timestamp <= now) {
                           count++;
                       }
                   }
@@ -1112,7 +1128,7 @@ zabbix_export:
                       name: show_symptoms
                       value: '1'
                 - type: item
-                  name: 'Bitdefender: Outdated endpoints'
+                  name: 'Outdated endpoints'
                   x: '46'
                   width: '13'
                   height: '3'
@@ -1178,7 +1194,7 @@ zabbix_export:
                       name: rf_rate
                       value: '10'
                 - type: item
-                  name: 'Bitdefender: Up-to-date endpoints'
+                  name: 'Up-to-date endpoints'
                   x: '59'
                   width: '13'
                   height: '3'
@@ -1232,12 +1248,18 @@ zabbix_export:
                     - type: STRING
                       name: columns.0.name
                       value: 'Bitdefender: Not protected endpoint names'
+                    - type: INTEGER
+                      name: layout
+                      value: '1'
                     - type: STRING
                       name: reference
                       value: LBDUY
                     - type: INTEGER
                       name: rf_rate
                       value: '10'
+                    - type: INTEGER
+                      name: show_column_header
+                      value: '1'
                     - type: INTEGER
                       name: show_lines
                       value: '1'
@@ -1258,12 +1280,18 @@ zabbix_export:
                     - type: STRING
                       name: columns.0.name
                       value: 'Bitdefender: Quarantine items details'
+                    - type: INTEGER
+                      name: layout
+                      value: '1'
                     - type: STRING
                       name: reference
                       value: WIXDS
                     - type: INTEGER
                       name: rf_rate
                       value: '10'
+                    - type: INTEGER
+                      name: show_column_header
+                      value: '1'
                     - type: INTEGER
                       name: show_lines
                       value: '1'
@@ -1284,12 +1312,18 @@ zabbix_export:
                     - type: STRING
                       name: columns.0.name
                       value: 'Bitdefender: Outdated endpoint names'
+                    - type: INTEGER
+                      name: layout
+                      value: '1'
                     - type: STRING
                       name: reference
                       value: RERXV
                     - type: INTEGER
                       name: rf_rate
                       value: '10'
+                    - type: INTEGER
+                      name: show_column_header
+                      value: '1'
                     - type: INTEGER
                       name: show_lines
                       value: '1'
