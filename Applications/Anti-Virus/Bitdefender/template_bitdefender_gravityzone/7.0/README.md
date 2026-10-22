@@ -1,4 +1,10 @@
-# Bitdefender GravityZone by HTTP
+## Project Repository
+
+Source code, documentation, bug reports, and feature requests are available on GitHub:
+
+[Bitdefender GravityZone Zabbix Template](https://github.com/luizcarmo1/bitdefender-gravityzone-zabbix-template)
+
+**Template file:** [template_bitdefender_gravityzone.yaml](https://github.com/luizcarmo1/bitdefender-gravityzone-zabbix-template/blob/main/Applications/Anti-Virus/Bitdefender/template_bitdefender_gravityzone/7.0/template_bitdefender_gravityzone.yaml)
 
 Zabbix 7.0 LTS template for monitoring **Bitdefender GravityZone Cloud** through the GravityZone Public API.
 

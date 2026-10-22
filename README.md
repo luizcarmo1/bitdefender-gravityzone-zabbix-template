@@ -1,5 +1,12 @@
+[![Zabbix](https://img.shields.io/badge/Zabbix-7.0%20LTS-red)](https://www.zabbix.com/)
+[![Bitdefender GravityZone](https://img.shields.io/badge/Bitdefender-GravityZone-ED1C24)](https://www.bitdefender.com/business/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 # Bitdefender GravityZone Zabbix Template
 
+Monitor Bitdefender GravityZone Cloud using the Zabbix HTTP agent and the GravityZone Public API.
+
+**Repository:** https://github.com/luizcarmo1/bitdefender-gravityzone-zabbix-template
 Monitor **Bitdefender GravityZone** using the Zabbix HTTP agent and the GravityZone Public API.
 
 This project provides a Zabbix template for monitoring endpoint protection status, outdated security agents, and quarantine activity through a centralized dashboard.
