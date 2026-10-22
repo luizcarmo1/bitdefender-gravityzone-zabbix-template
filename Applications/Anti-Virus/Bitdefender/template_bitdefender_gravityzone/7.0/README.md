@@ -30,6 +30,18 @@ The template collects endpoint inventory and quarantine information, calculates 
 
 Menu labels may vary slightly between Zabbix releases.
 
+## Dashboard
+
+The template includes a Zabbix dashboard for monitoring Bitdefender GravityZone endpoint protection and quarantine activity.
+
+### Overview
+
+![Bitdefender GravityZone Dashboard - Overview](Applications/Anti-Virus/Bitdefender/template_bitdefender_gravityzone/7.0/images/dashboard-overview.png)
+
+### Quarantine Monitoring
+
+![Bitdefender GravityZone Dashboard - Quarantine Monitoring](Applications/Anti-Virus/Bitdefender/template_bitdefender_gravityzone/7.0/images/dashboard-quarantine.png)
+
 ## Configuration
 
 ### Required macros

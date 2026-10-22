@@ -21,6 +21,18 @@ This project provides a Zabbix template for monitoring endpoint protection statu
 - **Security alerts:** Generate Zabbix problems for unprotected endpoints, outdated agents, and quarantine activity.
 - **Centralized monitoring:** Collect data through the GravityZone Public API using Zabbix HTTP requests and JavaScript preprocessing.
 
+## Dashboard
+
+The template includes a Zabbix dashboard for monitoring Bitdefender GravityZone endpoint protection and quarantine activity.
+
+### Overview
+
+![Bitdefender GravityZone Dashboard - Overview](Applications/Anti-Virus/Bitdefender/template_bitdefender_gravityzone/7.0/images/dashboard-overview.png)
+
+### Quarantine Monitoring
+
+![Bitdefender GravityZone Dashboard - Quarantine Monitoring](Applications/Anti-Virus/Bitdefender/template_bitdefender_gravityzone/7.0/images/dashboard-quarantine.png)
+
 ## Compatibility
 
 | Component | Supported version |
