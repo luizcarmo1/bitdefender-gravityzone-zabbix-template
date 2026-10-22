@@ -21,6 +21,8 @@ zabbix_export:
         Author:
         Luiz Fernando
         https://github.com/luizcarmo1
+        
+        Repositorie: https://github.com/luizcarmo1/bitdefender-gravityzone-zabbix-template
       vendor:
         name: luizcarmo1
         version: 7.0-1
