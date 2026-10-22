@@ -21,6 +21,9 @@ zabbix_export:
         Author:
         Luiz Fernando
         https://github.com/luizcarmo1
+      vendor:
+        name: luizcarmo1
+        version: 7.0-1
       groups:
         - name: Templates/Applications
       items:
